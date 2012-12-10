@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <unistd.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -22,21 +23,20 @@
 #include "ui_mainwindow.h"
 
 #include "interface.h"
+
+#include "ui_ecp_dialogs/wgt_yes_no.h"
+#include "ui_ecp_dialogs/wgt_swarm.h"
+#include "ui_ecp_dialogs/wgt_message.h"
+#include "ui_ecp_dialogs/wgt_input_integer.h"
+#include "ui_ecp_dialogs/wgt_input_double.h"
+#include "ui_ecp_dialogs/wgt_choose_option.h"
+#include "ui_ecp_dialogs/wgt_teaching.h"
+
 #include "ui_sr.h"
 #include "ui_ecp.h"
 #include "base/lib/ping.h"
 
 #include "config.h"
-
-#if (R_SWARMITFIX == 1)
-#include "../spkm/ui_r_spkm1.h"
-#include "../spkm/ui_r_spkm2.h"
-#include "../smb/ui_r_smb1.h"
-#include "../smb/ui_r_smb2.h"
-#include "../shead/ui_r_shead1.h"
-#include "../shead/ui_r_shead2.h"
-#include "../sbench/ui_r_sbench.h"
-#endif
 
 #if (R_BIRD_HAND == 1)
 #include "../bird_hand/ui_r_bird_hand.h"
@@ -81,7 +81,7 @@ Interface::Interface() :
 
 	mw = (boost::shared_ptr <MainWindow>) new MainWindow(*this);
 
-	main_eb = new function_execution_buffer(*this);
+	main_eb = (boost::shared_ptr <function_execution_buffer>) new function_execution_buffer(*this);
 
 	timer = (boost::shared_ptr <QTimer>) new QTimer(this);
 
@@ -93,16 +93,15 @@ Interface::Interface() :
 	ui_state = 1; // ui working
 	file_window_mode = ui::common::FSTRAJECTORY; // uczenie
 
-	all_robots = new AllRobots(this);
-	mp = new Mp(this);
+	all_robots = (boost::shared_ptr <AllRobots>) new AllRobots(*this);
+	mp = (boost::shared_ptr <Mp>) new Mp(*this);
 }
 
 Interface::~Interface()
 {
-	BOOST_FOREACH(robot_pair_t node, robot_m)
-			{
-				delete node.second;
-			}
+	BOOST_FOREACH(robot_pair_t node, robot_m) {
+		delete node.second;
+	}
 }
 
 void Interface::start_on_timer()
@@ -110,9 +109,8 @@ void Interface::start_on_timer()
 	timer->start(50);
 }
 
-bool Interface::html_it(std::string &_input, std::string &_output)
+void Interface::html_it(const std::string &_input, std::string &_output)
 {
-
 	try {
 		// Wyrażenie regularne reprezentujące pierwsze dwie kolumny (druga może być pusta)
 		boost::regex pattern("(<)|(>)|( )|(&)");
@@ -128,8 +126,6 @@ bool Interface::html_it(std::string &_input, std::string &_output)
 	} catch (std::exception &ex) {
 		std::cout << "blad" << ex.what() << std::endl;
 	}
-
-	return true;
 }
 
 void Interface::timer_slot()
@@ -213,8 +209,8 @@ void Interface::timer_slot()
 			// FIXME: ?
 			sr_msg.process_type = lib::UNKNOWN_PROCESS_TYPE;
 
-			char process_name_buffer[NAME_LENGTH + 1];snprintf
-			(process_name_buffer, sizeof(process_name_buffer), "%-15s", sr_msg.process_name);
+			char process_name_buffer[NAME_LENGTH + 1];
+			snprintf(process_name_buffer, sizeof(process_name_buffer), "%-15s", sr_msg.process_name);
 
 			strcat(current_line, process_name_buffer);
 
@@ -265,33 +261,32 @@ void Interface::timer_slot()
 			boost::tokenizer <boost::char_separator <char> > tokens(text, sep);
 
 			bool first_it = true;
-			BOOST_FOREACH(const std::string & t, tokens)
-					{
+			BOOST_FOREACH(const std::string & t, tokens) {
 
-						input = t.c_str();
+				input = t.c_str();
 
-						html_it(input, output);
+				html_it(input, output);
 
-						if (first_it) {
-							first_it = false;
+				if (first_it) {
+					first_it = false;
 
-							html_line += output + "</font>";
+					html_line += output + "</font>";
 
-						} else {
-							html_line =
-									"<font face=\"Monospace\" color=\"black\">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; "
-											"&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;"
-											"&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;"
-											+ output + "</font>";
+				} else {
+					html_line =
+							"<font face=\"Monospace\" color=\"black\">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; "
+									"&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;"
+									"&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;"
+									+ output + "</font>";
 
-							strcpy(current_line, "                                                     ");
-						}
-						strcat(current_line, t.c_str());
+					strcpy(current_line, "                                                     ");
+				}
+				strcat(current_line, t.c_str());
 
-						mw->get_ui()->textEdit_sr->append(QString::fromStdString(html_line));
+				mw->get_ui()->textEdit_sr->append(QString::fromStdString(html_line));
 
-						(*log_file_outfile) << current_line << std::endl;
-					}
+				(*log_file_outfile) << current_line << std::endl;
+			}
 		}
 
 		(*log_file_outfile).flush();
@@ -325,7 +320,7 @@ void Interface::timer_slot()
 			ui_state = 6;
 	} else if (ui_state == 6) { // zakonczenie aplikacji
 		(*log_file_outfile).close();
-		delete log_file_outfile;
+		log_file_outfile.reset();
 		printf("UI CLOSED\n");
 		abort_threads();
 		get_main_window()->close();
@@ -362,12 +357,11 @@ void Interface::open_process_control_windows()
 	//	}
 	//
 	//	wgt_robots_pc.clear();
-	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m)
-			{
-				if ((robot_node.second->state.is_active) && (robot_node.second->is_edp_loaded())) {
-					robot_node.second->get_wgt_robot_pc()->my_open();
-				}
-			}
+	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m) {
+		if ((robot_node.second->state.is_active) && (robot_node.second->is_edp_loaded())) {
+			robot_node.second->get_wgt_robot_pc()->my_open();
+		}
+	}
 
 	//	BOOST_FOREACH(wgt_robot_process_control *wgt_robot, wgt_robots_pc)
 	//	{
@@ -399,11 +393,6 @@ void Interface::raise_ui_ecp_window_slot()
 	switch (ecp_to_ui_msg.ecp_message)
 	{ // rodzaj polecenia z ECP
 
-		case lib::PLAN_STEP_MODE:
-
-			wgt_swarm_obj->my_open();
-
-			break;
 		case lib::C_XYZ_ANGLE_AXIS:
 			if (teachingstate == ui::common::MP_RUNNING) {
 				teachingstate = ui::common::ECP_TEACHING;
@@ -441,18 +430,18 @@ void Interface::raise_ui_ecp_window_slot()
 				teachingstate = ui::common::ECP_TEACHING;
 			}
 
-			wgt_teaching_obj->my_open("C_MOTOR");
+			wgt_teaching_obj->my_open("C_MOTOR", true);
 
 			robot_m[ui_ecp_obj->ecp_to_ui_msg.robot_name]->open_c_motor_window();
 
 			break;
 		case lib::YES_NO:
 
-			wgt_yes_no_obj->my_open();
+			wgt_yes_no_obj->my_open(true);
 
 			break;
 		case lib::MESSAGE:
-			wgt_message_obj->my_open();
+			wgt_message_obj->my_open(true);
 
 			ui_rep.reply = lib::ANSWER_YES;
 			ui_ecp_obj->synchroniser.command();
@@ -460,17 +449,17 @@ void Interface::raise_ui_ecp_window_slot()
 			break;
 		case lib::DOUBLE_NUMBER:
 
-			wgt_input_double_obj->my_open();
+			wgt_input_double_obj->my_open(true);
 
 			break;
 		case lib::INTEGER_NUMBER:
 
-			wgt_input_integer_obj->my_open();
+			wgt_input_integer_obj->my_open(true);
 
 			break;
 		case lib::CHOOSE_OPTION:
 
-			wgt_choose_option_obj->my_open();
+			wgt_choose_option_obj->my_open(true);
 
 			break;
 		case lib::LOAD_FILE:
@@ -561,10 +550,9 @@ void Interface::raise_ui_ecp_window_slot()
 
 void Interface::setRobotsMenu()
 {
-	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m)
-			{
-				robot_node.second->setup_menubar();
-			}
+	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m) {
+		robot_node.second->setup_menubar();
+	}
 }
 
 MainWindow* Interface::get_main_window() const
@@ -587,9 +575,16 @@ void Interface::set_ui_state_notification(UI_NOTIFICATION_STATE_ENUM new_notifac
 int Interface::wait_for_child_termination(pid_t pid, bool hang)
 {
 	int status;
-	pid_t child_pid;
+	pid_t child_pid = 0;
 	if (hang) {
-		child_pid = waitpid(pid, &status, 0);
+		int iterator = 0;
+		while ((child_pid <= 0) && (iterator < 200)) {
+			child_pid = waitpid(pid, &status, WNOHANG);
+			iterator++;
+			boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+			fprintf(stderr, ".");
+		}
+		fprintf(stderr, "\n");
 	} else {
 		child_pid = waitpid(pid, &status, WNOHANG);
 	}
@@ -632,15 +627,6 @@ common::robots_t Interface::getRobots() const
 
 void Interface::create_robots()
 {
-#if (R_SWARMITFIX == 1)
-	ADD_UI_ROBOT(spkm1);
-	ADD_UI_ROBOT(spkm2);
-	ADD_UI_ROBOT(smb1);
-	ADD_UI_ROBOT(smb2);
-	ADD_UI_ROBOT(shead1);
-	ADD_UI_ROBOT(shead2);
-	ADD_UI_ROBOT(sbench);
-#endif
 
 #if (R_BIRD_HAND == 1)
 	ADD_UI_ROBOT(bird_hand);
@@ -726,7 +712,7 @@ void Interface::init()
 	char* cwd;
 	char buff[PATH_MAX + 1];
 
-if(	uname(&sysinfo) == -1) {
+	if (uname(&sysinfo) == -1) {
 		perror("uname");
 	}
 
@@ -772,7 +758,7 @@ if(	uname(&sysinfo) == -1) {
 	signal(SIGCHLD, &catch_signal);
 
 	// Ignore SIGPIPE, which comes from communication errors and should be handled approriately
-	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+	if (signal(SIGPIPE, SIG_IGN ) == SIG_ERR ) {
 		BOOST_THROW_EXCEPTION(lib::exception::system_error());
 	}
 	/* TR
@@ -832,7 +818,7 @@ if(	uname(&sysinfo) == -1) {
 	strcat(log_file_with_dir, file_name);
 
 	// C++ new does not return 0 on failure, so there is no need to check
-	log_file_outfile = new std::ofstream(log_file_with_dir, std::ios::out);
+	log_file_outfile = (boost::shared_ptr <std::ofstream>) new std::ofstream(log_file_with_dir, std::ios::out);
 
 	//ui_msg->message("closing");
 
@@ -859,12 +845,11 @@ void Interface::manage_pc(void)
 {
 	wgt_pc->process_control_window_init();
 
-	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m)
-			{
-				if ((robot_node.second->state.is_active) && (robot_node.second->is_edp_loaded())) {
-					robot_node.second->get_wgt_robot_pc()->process_control_window_init();
-				}
-			}
+	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m) {
+		if ((robot_node.second->state.is_active) && (robot_node.second->is_edp_loaded())) {
+			robot_node.second->get_wgt_robot_pc()->window_init();
+		}
+	}
 
 	//wgt_pc->dwgt->raise();
 	//	BOOST_FOREACH(wgt_robot_process_control *wgt_robot, wgt_robots_pc)
@@ -888,13 +873,12 @@ void Interface::manage_interface_slot()
 	// okienko process control
 	wgt_pc->process_control_window_init_slot();
 
-	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m)
-			{
-				if ((robot_node.second->state.is_active) && (robot_node.second->is_edp_loaded())
-						&& robot_node.second->get_wgt_robot_pc()) {
-					robot_node.second->get_wgt_robot_pc()->process_control_window_init();
-				}
-			}
+	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m) {
+		if ((robot_node.second->state.is_active) && (robot_node.second->is_edp_loaded())
+				&& robot_node.second->get_wgt_robot_pc()) {
+			robot_node.second->get_wgt_robot_pc()->window_init();
+		}
+	}
 
 	//wgt_pc->dwgt->raise();
 	// UWAGA ta funkcja powinna byc odporna na odpalenie z dowolnego watku !!!
@@ -910,10 +894,9 @@ void Interface::manage_interface_slot()
 
 	 */
 	// uruchmomienie manage interface dla wszystkich robotow
-	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m)
-			{
-				robot_node.second->manage_interface();
-			}
+	BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m) {
+		robot_node.second->manage_interface();
+	}
 
 	// wlasciwosci menu  ABW_base_all_robots
 
@@ -943,10 +926,9 @@ void Interface::reload_whole_configuration()
 			case UI_ALL_EDPS_NONE_LOADED:
 
 				// uruchmomienie manage interface dla wszystkich robotow
-				BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m)
-						{
-							robot_node.second->reload_configuration();
-						}
+				BOOST_FOREACH(const common::robot_pair_t & robot_node, robot_m) {
+					robot_node.second->reload_configuration();
+				}
 
 				break;
 			default:
@@ -1207,8 +1189,7 @@ void Interface::initiate_configuration()
 		if (dirp != NULL) {
 			for (;;) {
 				struct dirent* direntp = readdir(dirp);
-				if (direntp == NULL
-				)
+				if (direntp == NULL)
 					break;
 
 				// printf( "%s\n", direntp->d_name );
@@ -1294,8 +1275,7 @@ void Interface::fill_node_list()
 	if (dirp != NULL) {
 		for (;;) {
 			struct dirent *direntp = readdir(dirp);
-			if (direntp == NULL
-			)
+			if (direntp == NULL)
 				break;
 			all_node_list.push_back(std::string(direntp->d_name));
 		}
@@ -1356,7 +1336,6 @@ void Interface::unload_all()
 
 void Interface::slay_all()
 {
-
 	// program unload
 
 	unload_all();
@@ -1393,6 +1372,7 @@ void Interface::slay_all()
 	}
 	printf("slay_all end\n");
 	manage_interface();
+	ui_msg->message(lib::NON_FATAL_ERROR, "slay_all executed and finished");
 }
 
 }

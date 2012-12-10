@@ -1,6 +1,5 @@
 //
 // READER - watek do buforowania danych pomiarowych i ich zapisu do pliku
-// Date: maj 2006
 //
 
 #include <cstdio>
@@ -18,8 +17,9 @@
 
 #include "base/lib/messip/messip_dataport.h"
 
+#include <boost/circular_buffer.hpp>
+
 #include <cerrno>
-#include <pthread.h>
 #include <ctime>
 
 #include <boost/scoped_array.hpp>
@@ -36,7 +36,7 @@ namespace edp {
 namespace common {
 
 reader_config::reader_config() :
-	step(false), measure_time(false), servo_mode(false)
+		step(false), measure_time(false), servo_mode(false)
 {
 	for (std::size_t i = 0; i < lib::MAX_SERVOS_NR; ++i) {
 		desired_inc[i] = false;
@@ -45,22 +45,25 @@ reader_config::reader_config() :
 		uchyb[i] = false;
 		abs_pos[i] = false;
 		current_joints[i] = false;
-                desired_joints[i] = false;
+		desired_joints[i] = false;
 	}
 
 	for (int i = 0; i < 6; ++i) {
-		force[i] = false;
+		computed_force[i] = false;
 		desired_force[i] = false;
-		filtered_force[i] = false;
+		adjusted_force[i] = false;
+		inertial_force[i] = false;
 		desired_cartesian_position[i] = false;
+		desired_cartesian_vel[i] = false;
 		real_cartesian_position[i] = false;
 		real_cartesian_vel[i] = false;
 		real_cartesian_acc[i] = false;
+		imu_cartesian_acc[i] = false;
 	}
 }
 
 reader_buffer::reader_buffer(motor_driven_effector &_master) :
-	new_data(false), master(_master), write_csv(true)
+		new_data(false), master(_master), write_csv(true)
 {
 	thread_id = boost::thread(boost::bind(&reader_buffer::operator(), this));
 }
@@ -90,7 +93,7 @@ void reader_buffer::operator()()
 	std::string reader_meassures_dir;
 
 	if (master.config.exists("reader_meassures_dir")) {
-		reader_meassures_dir = master.config.value <std::string> ("reader_meassures_dir", lib::UI_SECTION);
+		reader_meassures_dir = master.config.value <std::string>("reader_meassures_dir", lib::UI_SECTION);
 	} else {
 		reader_meassures_dir = master.config.return_default_reader_measures_path();
 	}
@@ -98,7 +101,7 @@ void reader_buffer::operator()()
 	std::string robot_filename = master.config.get_edp_reader_attach_point();
 
 	if (master.config.exists("reader_samples"))
-		nr_of_samples = master.config.value <int> ("reader_samples");
+		nr_of_samples = master.config.value <int>("reader_samples");
 	else
 		nr_of_samples = 1000;
 
@@ -128,24 +131,30 @@ void reader_buffer::operator()()
 		sprintf(tmp_string, "current_joints_%d", j);
 		reader_cnf.current_joints[j] = master.config.check_config(tmp_string);
 
-                sprintf(tmp_string, "desired_joints_%d", j);
-                reader_cnf.desired_joints[j] = master.config.check_config(tmp_string);
+		sprintf(tmp_string, "desired_joints_%d", j);
+		reader_cnf.desired_joints[j] = master.config.check_config(tmp_string);
 
 		sprintf(tmp_string, "measured_current_%d", j);
 		reader_cnf.measured_current[j] = master.config.check_config(tmp_string);
 
 		if (j < 6) {
-			sprintf(tmp_string, "force_%d", j);
-			reader_cnf.force[j] = master.config.check_config(tmp_string);
+			sprintf(tmp_string, "computed_force_%d", j);
+			reader_cnf.computed_force[j] = master.config.check_config(tmp_string);
 
 			sprintf(tmp_string, "desired_force_%d", j);
 			reader_cnf.desired_force[j] = master.config.check_config(tmp_string);
 
-			sprintf(tmp_string, "filtered_force_%d", j);
-			reader_cnf.filtered_force[j] = master.config.check_config(tmp_string);
+			sprintf(tmp_string, "adjusted_force_%d", j);
+			reader_cnf.adjusted_force[j] = master.config.check_config(tmp_string);
+
+			sprintf(tmp_string, "inertial_force_%d", j);
+			reader_cnf.inertial_force[j] = master.config.check_config(tmp_string);
 
 			sprintf(tmp_string, "desired_cartesian_position_%d", j);
 			reader_cnf.desired_cartesian_position[j] = master.config.check_config(tmp_string);
+
+			sprintf(tmp_string, "desired_cartesian_vel_%d", j);
+			reader_cnf.desired_cartesian_vel[j] = master.config.check_config(tmp_string);
 
 			sprintf(tmp_string, "real_cartesian_position_%d", j);
 			reader_cnf.real_cartesian_position[j] = master.config.check_config(tmp_string);
@@ -155,11 +164,16 @@ void reader_buffer::operator()()
 
 			sprintf(tmp_string, "real_cartesian_acc_%d", j);
 			reader_cnf.real_cartesian_acc[j] = master.config.check_config(tmp_string);
+
+			sprintf(tmp_string, "imu_cartesian_acc_%d", j);
+			reader_cnf.imu_cartesian_acc[j] = master.config.check_config(tmp_string);
 		}
 	}
 
 	// ustawienie priorytetu watku
-	lib::set_thread_priority(pthread_self(), lib::PTHREAD_MIN_PRIORITY);
+	if (!master.robot_test_mode) {
+		lib::set_thread_priority(lib::PTHREAD_MIN_PRIORITY);
+	}
 
 	// NOTE: reader buffer has to be allocated on heap (using "new" operator) due to huge size
 	// boost::scoped_array takes care of deallocating in case of exception
@@ -183,10 +197,9 @@ void reader_buffer::operator()()
 	for (;;) {
 		// TODO: why, Leo? Why?
 		// ustawienie priorytetu watku
-		lib::set_thread_priority(pthread_self(), lib::PTHREAD_MIN_PRIORITY);
-
-		// ustawienie priorytetu watku
-//		lib::set_thread_priority(pthread_self(), lib::QNX_MAX_PRIORITY - 10);
+		if (!master.robot_test_mode) {
+			lib::set_thread_priority(lib::PTHREAD_MIN_PRIORITY);
+		}
 
 		start = false; // okresla czy odebrano juz puls rozpoczecia pomiarow
 
@@ -208,7 +221,9 @@ void reader_buffer::operator()()
 		master.msg->message("measures started");
 
 		// TODO: why, Leo? Why?
-		lib::set_thread_priority(pthread_self(), lib::PTHREAD_MAX_PRIORITY);
+		if (!master.robot_test_mode) {
+			lib::set_thread_priority(lib::PTHREAD_MAX_PRIORITY);
+		}
 
 		// dopoki nie przyjdzie puls stopu
 		do {
@@ -251,7 +266,9 @@ void reader_buffer::operator()()
 
 		} while (!stop); // dopoki nie przyjdzie puls stopu
 
-		lib::set_thread_priority(pthread_self(), lib::PTHREAD_MIN_PRIORITY);// Najnizszy priorytet podczas proby zapisu do pliku
+		if (!master.robot_test_mode) {
+			lib::set_thread_priority(lib::PTHREAD_MIN_PRIORITY); // Najnizszy priorytet podczas proby zapisu do pliku
+		}
 		master.msg->message("measures stopped");
 
 		// przygotowanie nazwy pliku do ktorego beda zapisane pomiary
@@ -337,20 +354,22 @@ void reader_buffer::write_data_old_format(std::ofstream& outfile, const reader_d
 			outfile << data.current_joints[j] << " ";
 	}
 
-        for (int j = 0; j < master.number_of_servos; j++) {
-                if (reader_cnf.desired_joints[j])
-                        outfile << data.desired_joints[j] << " ";
-        }
+	for (int j = 0; j < master.number_of_servos; j++) {
+		if (reader_cnf.desired_joints[j])
+			outfile << data.desired_joints[j] << " ";
+	}
 
 	outfile << "f: ";
 
 	for (int j = 0; j < 6; j++) {
-		if (reader_cnf.force[j])
-			outfile << data.force[j] << " ";
+		if (reader_cnf.computed_force[j])
+			outfile << data.computed_force[j] << " ";
 		if (reader_cnf.desired_force[j])
 			outfile << data.desired_force[j] << " ";
-		if (reader_cnf.filtered_force[j])
-			outfile << data.filtered_force[j] << " ";
+		if (reader_cnf.adjusted_force[j])
+			outfile << data.adjusted_force[j] << " ";
+		if (reader_cnf.inertial_force[j])
+			outfile << data.inertial_force[j] << " ";
 	}
 
 	outfile << "k: ";
@@ -358,6 +377,11 @@ void reader_buffer::write_data_old_format(std::ofstream& outfile, const reader_d
 	for (int j = 0; j < 6; j++) {
 		if (reader_cnf.desired_cartesian_position[j])
 			outfile << data.desired_cartesian_position[j] << " ";
+	}
+
+	for (int j = 0; j < 6; j++) {
+		if (reader_cnf.desired_cartesian_vel[j])
+			outfile << data.desired_cartesian_vel[j] << " ";
 	}
 
 	outfile << "r: ";
@@ -374,11 +398,18 @@ void reader_buffer::write_data_old_format(std::ofstream& outfile, const reader_d
 			outfile << data.real_cartesian_vel[j] << " ";
 	}
 
-	outfile << "a: ";
+	outfile << "ra: ";
 
 	for (int j = 0; j < 6; j++) {
 		if (reader_cnf.real_cartesian_acc[j])
 			outfile << data.real_cartesian_acc[j] << " ";
+	}
+
+	outfile << "ia: ";
+
+	for (int j = 0; j < 6; j++) {
+		if (reader_cnf.imu_cartesian_acc[j])
+			outfile << data.imu_cartesian_acc[j] << " ";
 	}
 
 	outfile << "t: " << data.ui_trigger;
@@ -413,28 +444,34 @@ void reader_buffer::write_header_csv(std::ofstream& outfile)
 			outfile << "current_joints[" << j << "];";
 	}
 
-        for (int j = 0; j < master.number_of_servos; j++) {
-                if (reader_cnf.desired_joints[j])
-                        outfile << "desired_joints[" << j << "];";
-        }
+	for (int j = 0; j < master.number_of_servos; j++) {
+		if (reader_cnf.desired_joints[j])
+			outfile << "desired_joints[" << j << "];";
+	}
 
-        for (int j = 0; j < master.number_of_servos; j++) {
-                if (reader_cnf.pwm[j])
-                        outfile << "pwm[" << j << "];";
-        }
+	for (int j = 0; j < master.number_of_servos; j++) {
+		if (reader_cnf.pwm[j])
+			outfile << "pwm[" << j << "];";
+	}
 
 	for (int j = 0; j < 6; j++) {
-		if (reader_cnf.force[j])
-			outfile << "force[" << j << "];";
+		if (reader_cnf.computed_force[j])
+			outfile << "computed_force[" << j << "];";
 		if (reader_cnf.desired_force[j])
 			outfile << "desired_force[" << j << "];";
-		if (reader_cnf.filtered_force[j])
-			outfile << "filtered_force[" << j << "];";
+		if (reader_cnf.adjusted_force[j])
+			outfile << "adjusted_force[" << j << "];";
+		if (reader_cnf.inertial_force[j])
+			outfile << "inertial_force[" << j << "];";
 	}
 
 	for (int j = 0; j < 6; j++) {
 		if (reader_cnf.desired_cartesian_position[j])
 			outfile << "desired_cartesian_position[" << j << "];";
+	}
+	for (int j = 0; j < 6; j++) {
+		if (reader_cnf.desired_cartesian_vel[j])
+			outfile << "desired_cartesian_vel[" << j << "];";
 	}
 
 	for (int j = 0; j < 6; j++) {
@@ -450,6 +487,11 @@ void reader_buffer::write_header_csv(std::ofstream& outfile)
 	for (int j = 0; j < 6; j++) {
 		if (reader_cnf.real_cartesian_acc[j])
 			outfile << "real_cartesian_acc[" << j << "];";
+	}
+
+	for (int j = 0; j < 6; j++) {
+		if (reader_cnf.imu_cartesian_acc[j])
+			outfile << "imu_cartesian_acc[" << j << "];";
 	}
 
 	outfile << "ui_trigger\n";
@@ -469,8 +511,8 @@ void reader_buffer::write_data_csv(std::ofstream& outfile, const reader_data & d
 			outfile << data.current_inc[j] << ";";
 		if (reader_cnf.measured_current[j])
 			outfile << data.measured_current[j] << ";";
-                //if (reader_cnf.pwm[j])
-                //	outfile << data.pwm[j] << ";";
+		//if (reader_cnf.pwm[j])
+		//	outfile << data.pwm[j] << ";";
 		if (reader_cnf.uchyb[j])
 			outfile << data.uchyb[j] << ";";
 		if (reader_cnf.abs_pos[j])
@@ -482,28 +524,35 @@ void reader_buffer::write_data_csv(std::ofstream& outfile, const reader_data & d
 			outfile << data.current_joints[j] << ";";
 	}
 
-        for (int j = 0; j < master.number_of_servos; j++) {
-                if (reader_cnf.desired_joints[j])
-                        outfile << data.desired_joints[j] << ";";
-        }
+	for (int j = 0; j < master.number_of_servos; j++) {
+		if (reader_cnf.desired_joints[j])
+			outfile << data.desired_joints[j] << ";";
+	}
 
-        for (int j = 0; j < master.number_of_servos; j++) {
-            if (reader_cnf.pwm[j])
-                    outfile << data.pwm[j] << ";";
-        }
+	for (int j = 0; j < master.number_of_servos; j++) {
+		if (reader_cnf.pwm[j])
+			outfile << data.pwm[j] << ";";
+	}
 
 	for (int j = 0; j < 6; j++) {
-		if (reader_cnf.force[j])
-			outfile << data.force[j] << ";";
+		if (reader_cnf.computed_force[j])
+			outfile << data.computed_force[j] << ";";
 		if (reader_cnf.desired_force[j])
 			outfile << data.desired_force[j] << ";";
-		if (reader_cnf.filtered_force[j])
-			outfile << data.filtered_force[j] << ";";
+		if (reader_cnf.adjusted_force[j])
+			outfile << data.adjusted_force[j] << ";";
+		if (reader_cnf.inertial_force[j])
+			outfile << data.inertial_force[j] << ";";
 	}
 
 	for (int j = 0; j < 6; j++) {
 		if (reader_cnf.desired_cartesian_position[j])
 			outfile << data.desired_cartesian_position[j] << ";";
+	}
+
+	for (int j = 0; j < 6; j++) {
+		if (reader_cnf.desired_cartesian_vel[j])
+			outfile << data.desired_cartesian_vel[j] << ";";
 	}
 
 	for (int j = 0; j < 6; j++) {
@@ -519,6 +568,11 @@ void reader_buffer::write_data_csv(std::ofstream& outfile, const reader_data & d
 	for (int j = 0; j < 6; j++) {
 		if (reader_cnf.real_cartesian_acc[j])
 			outfile << data.real_cartesian_acc[j] << ";";
+	}
+
+	for (int j = 0; j < 6; j++) {
+		if (reader_cnf.imu_cartesian_acc[j])
+			outfile << data.imu_cartesian_acc[j] << ";";
 	}
 
 	outfile << data.ui_trigger << '\n';

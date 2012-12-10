@@ -21,6 +21,7 @@ namespace mrrocpp {
 namespace mp {
 
 namespace task {
+class task_base;
 class task;
 } // namespace task
 namespace generator {
@@ -39,7 +40,7 @@ class robot : public ecp_mp::robot
 {
 	// Both the generator and task have access to private methods
 	friend class mrrocpp::mp::generator::generator;
-	friend class mrrocpp::mp::task::task;
+	friend class mrrocpp::mp::task::task_base;
 
 private:
 	/**
@@ -54,11 +55,11 @@ private:
 
 public:
 	//! Remote agent proxy
-	RemoteAgent ecp;
+	lib::agent::RemoteAgent ecp;
 
 private:
 	//! Remote agent's data buffer
-	OutputBuffer <lib::MP_COMMAND_PACKAGE> command;
+	lib::agent::OutputBuffer <lib::MP_COMMAND_PACKAGE> command;
 
 	/**
 	 * @brief reference to sr_ecp object for sending messages to UI_SR console
@@ -112,7 +113,7 @@ public:
 
 	//! Data buffer with messages from the ECP
 	//! TODO: users should not use this data directly, only the 'const ecp_reply_package'.
-	InputBuffer <lib::ECP_REPLY_PACKAGE> reply;
+	lib::agent::InputBuffer <lib::ECP_REPLY_PACKAGE> reply;
 
 	/**
 	 * @brief reply buffer from ecp
@@ -145,8 +146,6 @@ public:
 	 */
 	virtual ~robot();
 };
-
-
 
 } // namespace robot
 } // namespace mp

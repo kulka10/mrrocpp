@@ -6,7 +6,7 @@
 #include <QMainWindow>
 #include <QLocale>
 
-wgt_base::wgt_base(QString _widget_label, mrrocpp::ui::common::Interface& _interface, QWidget *parent) :
+wgt_base::wgt_base(const QString & _widget_label, mrrocpp::ui::common::Interface& _interface, QWidget *parent) :
 		QWidget(parent), widget_label(_widget_label), interface(_interface)
 {
 	dwgt = new QDockWidget((QMainWindow *) interface.get_main_window());
@@ -23,7 +23,7 @@ wgt_base::wgt_base(QString _widget_label, mrrocpp::ui::common::Interface& _inter
 	interface.get_main_window()->addDockWidget(Qt::LeftDockWidgetArea, dwgt);
 }
 
-wgt_base::wgt_base(QString _widget_label, mrrocpp::ui::common::Interface& _interface, mrrocpp::ui::common::UiRobot *robo, QWidget *parent) :
+wgt_base::wgt_base(const QString & _widget_label, mrrocpp::ui::common::Interface& _interface, mrrocpp::ui::common::UiRobot *robo, QWidget *parent) :
 		QWidget(parent), widget_label(_widget_label), interface(_interface), robot(robo)
 {
 	dwgt = new QDockWidget((QMainWindow *) interface.get_main_window());
@@ -72,8 +72,7 @@ void wgt_base::synchro_depended_init_slot()
 				synchro_depended_widgets_disable(true); // Wygaszanie elementow przy niezsynchronizowanym robocie
 		}
 	}
-	CATCH_SECTION_UI_PTR
-}
+	CATCH_SECTION_UI_PTR}
 
 void wgt_base::init_and_copy()
 {
@@ -162,6 +161,26 @@ QDoubleSpinBox* wgt_base::create_spin_box_to_vector(QVector <QDoubleSpinBox*> &s
 	return spin_box;
 }
 
+QSpinBox* wgt_base::create_spin_box_to_vector(QVector <QSpinBox*> &spin_boxes)
+{
+	QSpinBox *spin_box;
+	spin_box = new QSpinBox(this);
+	spin_box->setMinimum(0);
+	spin_box->setMaximum(100);
+	spin_box->setSingleStep(1);
+	spin_boxes.append(spin_box);
+	return spin_box;
+}
+
+QLabel* wgt_base::create_label_to_vector(QVector <QLabel*> &labels_l)
+{
+	QLabel *label_l;
+	label_l = new QLabel(this);
+	labels_l.append(label_l);
+	return label_l;
+
+}
+
 void wgt_base::add_incremental_move_button(QPushButton *button, int row, int column)
 {
 	gridLayout->addWidget(button, row + 1, column, 1, 1);
@@ -190,9 +209,4 @@ QPushButton* wgt_base::add_button(QString label, int x, int y, int rowSpan, int 
 void wgt_base::my_close()
 {
 	dwgt->hide();
-}
-
-wgt_base::~wgt_base()
-{
-
 }

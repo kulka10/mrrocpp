@@ -8,9 +8,8 @@
  *
  * @ingroup spring_contact
  */
-
-#include "generator/ecp/ecp_g_teach_in.h"
-#include "base/lib/mrmath/mrmath.h"
+#include "ecp_mp_g_spring_contact.h"
+#include "base/ecp/ecp_generator.h"
 
 namespace mrrocpp {
 namespace ecp {

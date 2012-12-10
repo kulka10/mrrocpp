@@ -8,8 +8,9 @@
  *
  * @ingroup edge_follow
  */
+#include "ecp_mp_g_edge_follow.h"
 
-#include "generator/ecp/ecp_g_teach_in.h"
+#include "generator/ecp/teach_in/ecp_g_teach_in.h"
 #include "base/lib/mrmath/mrmath.h"
 
 namespace mrrocpp {

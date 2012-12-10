@@ -306,9 +306,13 @@ void effector::create_threads()
 	vis_obj = (boost::shared_ptr <common::vis_server>) new common::vis_server(*this);
 }
 
-lib::INSTRUCTION_TYPE effector::variant_receive_instruction()
+lib::INSTRUCTION_TYPE effector::receive_instruction()
 {
-	return receive_instruction(instruction);
+//	printf("receive_instruction bird_hand\n");
+	lib::INSTRUCTION_TYPE output = common::effector::receive_instruction(instruction);
+//	std::cout << "bird_hand: " << (int) instruction.get_type << std::endl;
+	return output;
+
 }
 
 void effector::variant_reply_to_instruction()

@@ -1,0 +1,7 @@
+add_library(ecp_g_tff_rubik_face_rotate
+	ecp_g_tff_rubik_face_rotate.cc
+)
+
+target_link_libraries(ecp_g_tff_rubik_face_rotate ecp)
+
+install(TARGETS ecp_g_tff_rubik_face_rotate DESTINATION lib)

@@ -18,6 +18,7 @@
 namespace mrrocpp {
 namespace ecp {
 namespace common {
+const std::string EMPTY_SUBTASK_GENERATOR_NAME = "EMPTY_SUBTASK_GENERATOR_NAME";
 namespace generator {
 
 /*!
@@ -27,8 +28,60 @@ namespace generator {
  * @author twiniars <twiniars@ia.pw.edu.pl>, Warsaw University of Technology
  * @ingroup ecp
  */
+class generator_base : public ecp_mp::generator::generator
+{
+
+protected:
+	/**
+	 * @brief ECP task object type
+	 */
+	typedef common::task::task_base task_t;
+
+	/**
+	 * @brief ECP task object reference
+	 */
+	task_t & ecp_t;
+
+public:
+
+	/**
+	 * @brief Unique class name
+	 */
+	lib::generator_name_t generator_name;
+
+	generator_base(task_t & _ecp_task) :
+			ecp_mp::generator::generator(*(_ecp_task.sr_ecp_msg)),
+			ecp_t(_ecp_task),
+			generator_name(EMPTY_SUBTASK_GENERATOR_NAME)
+	{
+	}
+
+	bool first_step(void)
+	{
+		return next_step();
+	}
+
+	bool next_step(void)
+	{
+		return false;
+	}
+
+	/**
+	 * @brief executed by dispatcher
+	 */
+	virtual void conditional_execution() = 0;
+
+};
+
+/*!
+ * @brief Base class of all ecp generators (template)
+ * The generator both generates command and checks terminal condition
+ *
+ * @author twiniars <twiniars@ia.pw.edu.pl>, Warsaw University of Technology
+ * @ingroup ecp
+ */
 template <typename ECP_ROBOT_T>
-class _generator : public ecp_mp::generator::generator
+class _generator : public generator_base
 {
 private:
 	/**
@@ -59,19 +112,9 @@ protected:
 	typedef ECP_ROBOT_T robot_t;
 
 	/**
-	 * @brief ECP task object type
-	 */
-	typedef common::task::task_base task_t;
-
-	/**
 	 * @brief ECP generator itself object type
 	 */
 	typedef _generator <ECP_ROBOT_T> generator_t;
-
-	/**
-	 * @brief ECP task object reference
-	 */
-	task_t & ecp_t;
 
 	/**
 	 * @brief communicates with EDP
@@ -82,6 +125,14 @@ protected:
 	}
 
 public:
+	/**
+	 * @brief executed by dispatcher
+	 */
+	virtual void conditional_execution()
+	{
+		Move();
+	}
+
 	/**
 	 * @brief Main generator method to execute transition cycle
 	 */
@@ -103,7 +154,7 @@ public:
 			}
 
 			// zlecenie przygotowania danych przez czujniki
-			ecp_t.all_sensors_initiate_reading(sensor_m);
+			initiate_sensors_readings();
 
 			if (the_robot) {
 
@@ -131,7 +182,7 @@ public:
 			}
 
 			// odczytanie danych z wszystkich czujnikow
-			ecp_t.all_sensors_get_reading(sensor_m);
+			get_sensors_readings();
 
 			node_counter++;
 			if (ecp_t.pulse_check()) {
@@ -152,9 +203,7 @@ public:
 	 * @param _ecp_task ecp task object reference.
 	 */
 	_generator(task_t & _ecp_task) :
-			ecp_mp::generator::generator(*(_ecp_task.sr_ecp_msg)),
-			ecp_t(_ecp_task),
-			the_robot(boost::shared_dynamic_cast <ECP_ROBOT_T>(ecp_t.ecp_m_robot))
+			generator_base(_ecp_task), the_robot(boost::shared_dynamic_cast <ECP_ROBOT_T>(ecp_t.ecp_m_robot))
 	{
 	}
 

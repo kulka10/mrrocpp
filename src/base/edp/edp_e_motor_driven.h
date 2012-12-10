@@ -17,12 +17,12 @@
 
 #include "base/lib/condition_synchroniser.h"
 #include "base/kinematics/kinematics_manager.h"
-#include "base/edp/in_out.h"
-#include "base/edp/edp_effector.h"
+#include "in_out.h"
+#include "edp_effector.h"
+#include "edp_dp.h"
+#include "base/lib/exception.h"
 
 #include <boost/function.hpp>
-
-static const float VELOCITY_LIMIT_GLOBAL_FACTOR_DEFAULT = 0.2;
 
 namespace mrrocpp {
 namespace edp {
@@ -31,6 +31,8 @@ class force;
 }
 namespace common {
 
+static const float VELOCITY_LIMIT_GLOBAL_FACTOR_DEFAULT = 0.2;
+
 // TODO: remove forward declarations
 class servo_buffer;
 class edp_vsp;
@@ -38,18 +40,13 @@ class manip_trans_t;
 class reader_buffer;
 class vis_server;
 
-enum STATE
-{
-	GET_STATE, GET_SYNCHRO, SYNCHRO_TERMINATED, GET_INSTRUCTION, EXECUTE_INSTRUCTION, WAIT, WAIT_Q
-};
-
 /*!
  * \class motor_driven_effector
  * \brief Base class of all EDP effectors using motors (e.g. robots)
  *
- * The class can be treated as multi variant shield. The derrived classes can optionally use servo_buffer (dedicated servo thread)
+ * The class can be treated as multi variant shield. The derived classes can optionally use servo_buffer (dedicated servo thread)
  * reader_buffer - dedicated reader thread, mt_tt_obj - dedicated thread to interpolate in task coordinates, e.g. force control in manipulators
- * vis_server - dedicated thread to sent joint position e.g. to visualisation processes,
+ * vis_server - dedicated thread to sent joint position e.g. to visualization processes,
  * sensor::force -- dedicated thread to measure force for the purpose of position force control of robotics manipulator
  * edp_vsp_obj - thread to sent data to VSP process (when the force sensor is used both as the prioceptor and exteroceptor)
  * *
@@ -57,6 +54,30 @@ enum STATE
  */
 class motor_driven_effector : public effector, public kinematics::common::kinematics_manager
 {
+private:
+	enum STATE
+	{
+		GET_STATE, GET_SYNCHRO, SYNCHRO_TERMINATED, GET_INSTRUCTION, EXECUTE_INSTRUCTION, WAIT, WAIT_Q
+	};
+
+	/*!
+	 * \brief (GOF) Good old-fashioned mrroc++ non fatal error 1.
+	 * \author yoyek
+	 */
+	REGISTER_NON_FATAL_ERROR(nfe_1, "Non fatal error - type 1")
+
+	/*!
+	 * \brief (GOF) Good old-fashioned mrroc++ non fatal error 3.
+	 * \author yoyek
+	 */
+	REGISTER_NON_FATAL_ERROR(nfe_3, "Non fatal error - type 3")
+
+	/*!
+	 * \brief (GOF) Good old-fashioned mrroc++ non fatal error 4.
+	 * \author yoyek
+	 */
+	REGISTER_NON_FATAL_ERROR(nfe_4, "Non fatal error - type 4")
+
 protected:
 	/*!
 	 * \brief The number of steps in the macrostep.
@@ -128,7 +149,7 @@ protected:
 	void move_servos();
 
 	/*!
-	 * \brief motor position  currently computed in the servo
+	 * \brief current motor position taken in servo thread from hardware interface
 	 *
 	 * for the single step of servo control
 	 */
@@ -184,6 +205,8 @@ protected:
 	lib::MotorArray current_motor_pos;
 
 public:
+
+	bool servo_mode;
 
 	/*!
 	 * \brief method to read current joint position stored in global_current_joints
@@ -245,13 +268,6 @@ public:
 	 * This is dedicated thread that transmits joints positions to visualisation process.
 	 */
 	boost::shared_ptr <vis_server> vis_obj;
-
-	/*!
-	 * \brief force object to collect force measurements.
-	 *
-	 * The force measurements are collected in dedicated thread. Then the influence of gravitational force is removed in the same thread.
-	 */
-	boost::shared_ptr <sensor::force> vs;
 
 	/*!
 	 * \brief class constructor
@@ -350,6 +366,14 @@ public:
 	 * it is impossible to move robot in absolute coordinates before synchronisation.
 	 */
 	virtual void synchronise();
+
+	/*!
+	 * \brief method to unsynchronise robot
+	 *
+	 * it is impossible to move robot in absolute coordinates before synchronisation.
+	 */
+	virtual void unsynchronise();
+
 
 	/*!
 	 * \brief method to compute servo_current_motor_pos, servo_cuurent_joints_pos and surve_current_frame in child classes
@@ -492,7 +516,7 @@ public:
 	 *
 	 * It is reimplemented in derived classes to call the template class specialized with particular class type
 	 */
-	virtual lib::INSTRUCTION_TYPE variant_receive_instruction();
+	virtual lib::INSTRUCTION_TYPE receive_instruction();
 
 	/*!
 	 * \brief method to reply to ecp with class of particular type

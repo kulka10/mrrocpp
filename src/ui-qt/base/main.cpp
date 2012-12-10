@@ -14,7 +14,7 @@ void catch_signal(int sig)
 	// print a message
 	fprintf(stderr, "UI: %s\n", strsignal(sig));
 
-//	std::cout << std::endl << std::endl << "catch_signal: " << interface->sigchld_handling << std::endl << std::endl;
+	//std::cout << std::endl << std::endl << "catch_signal: " << interface->sigchld_handling << std::endl << std::endl;
 
 	switch (sig)
 	{
@@ -30,6 +30,8 @@ void catch_signal(int sig)
 			break;
 		case SIGCHLD:
 			if ((interface) && (interface->check_sigchld_handling())) {
+				//	std::cout << std::endl << std::endl << "catch_signal inside: " << interface->sigchld_handling
+				// << std::endl << std::endl;
 				interface->wait_for_child_termination(-1, false);
 			}
 			break;
@@ -43,7 +45,10 @@ int main(int argc, char *argv[])
 	QApplication a(argc, argv);
 	QLocale::setDefault(QLocale::English);
 	interface = new mrrocpp::ui::common::Interface();
+	Q_INIT_RESOURCE(resource);
+	QApplication::setWindowIcon(QIcon(":/mrr.svg"));
 
+//	QApplication::setWindowIcon(DOCKICON);
 	interface->init();
 	int r = a.exec();
 

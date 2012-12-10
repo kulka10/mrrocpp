@@ -6,193 +6,180 @@
 
 #include "base/lib/sr/srlib.h"
 #include "application/generator_tester/ecp_st_const_vel_gen_test.h"
-#include "generator/ecp/ecp_g_constant_velocity.h"
+#include "generator/ecp/constant_velocity/ecp_g_constant_velocity.h"
 
 #include "robot/irp6ot_m/const_irp6ot_m.h"
 #include "robot/irp6p_m/const_irp6p_m.h"
 
 #include "robot/conveyor/const_conveyor.h"
+//#include "ecp_mp_st_const_vel_gen_test.h"
 
 #include "base/ecp/ecp_task.h"
 
 namespace mrrocpp {
 namespace ecp {
 namespace common {
-namespace sub_task {
+namespace generator {
 
-sub_task_const_vel_gen_test::sub_task_const_vel_gen_test(task::task & _ecp_t) :
-		sub_task(_ecp_t)
+const_vel_gen_test::const_vel_gen_test(task::task & _ecp_t) :
+		common::generator::generator(_ecp_t)
 {
-
+	generator_name = mrrocpp::ecp_mp::generator::ECP_MP_CONST_VEL_GEN_TEST;
 	if (_ecp_t.ecp_m_robot->robot_name == lib::irp6p_m::ROBOT_NAME) {
-		cvgenjoint = new generator::constant_velocity(ecp_t, lib::ECP_JOINT, 6);
+		cvgenjoint = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_JOINT, 6);
 		cvgenjoint->set_debug(true);
 
-		cvgenmotor = new generator::constant_velocity(ecp_t, lib::ECP_MOTOR, 6);
+		cvgenjoint = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_MOTOR, 6);
 		cvgenmotor->set_debug(true);
 
 		track = false;
 		postument = true;
-		poly = false;
 		conv = false;
 
-		cvgeneuler = new generator::constant_velocity(ecp_t, lib::ECP_XYZ_EULER_ZYZ, 6);
+		cvgenjoint = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_XYZ_EULER_ZYZ, 6);
 		cvgeneuler->set_debug(true);
 
-		cvgenangle = new generator::constant_velocity(ecp_t, lib::ECP_XYZ_ANGLE_AXIS, 6);
+		cvgenjoint = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_XYZ_ANGLE_AXIS, 6);
 		cvgenangle->set_debug(true);
 
 	} else if (_ecp_t.ecp_m_robot->robot_name == lib::irp6ot_m::ROBOT_NAME) {
-		cvgenjoint = new generator::constant_velocity(ecp_t, lib::ECP_JOINT, 7);
+		cvgenjoint = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_JOINT, 7);
 		cvgenjoint->set_debug(true);
 
-		cvgenmotor = new generator::constant_velocity(ecp_t, lib::ECP_MOTOR, 7);
+		cvgenmotor = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_MOTOR, 7);
 		cvgenmotor->set_debug(true);
 
 		track = true;
 		postument = false;
-		poly = false;
 		conv = false;
 
-		cvgeneuler = new generator::constant_velocity(ecp_t, lib::ECP_XYZ_EULER_ZYZ, 6);
+		cvgeneuler = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_XYZ_EULER_ZYZ, 6);
 		cvgeneuler->set_debug(true);
 
-		cvgenangle = new generator::constant_velocity(ecp_t, lib::ECP_XYZ_ANGLE_AXIS, 6);
+		cvgenangle = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_XYZ_ANGLE_AXIS, 6);
 		cvgenangle->set_debug(true);
 
 	} else if (_ecp_t.ecp_m_robot->robot_name == lib::conveyor::ROBOT_NAME) {
-		cvgenjoint = new generator::constant_velocity(ecp_t, lib::ECP_JOINT, 1);
+		cvgenjoint = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_JOINT, 1);
 		cvgenjoint->set_debug(true);
 
-		cvgenmotor = new generator::constant_velocity(ecp_t, lib::ECP_MOTOR, 1);
+		cvgenmotor = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_MOTOR, 1);
 		cvgenmotor->set_debug(true);
 
 		track = false;
 		postument = false;
-		poly = false;
 		conv = true;
 
-		cvgeneuler = new generator::constant_velocity(ecp_t, lib::ECP_XYZ_EULER_ZYZ, 1);
+		cvgeneuler = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_XYZ_EULER_ZYZ, 1);
 		cvgeneuler->set_debug(true);
 
-		cvgenangle = new generator::constant_velocity(ecp_t, lib::ECP_XYZ_ANGLE_AXIS, 1);
+		cvgenangle = (boost::shared_ptr <constant_velocity>) new constant_velocity(_ecp_t, lib::ECP_XYZ_ANGLE_AXIS, 1);
 		cvgenangle->set_debug(true);
+
 	}
 
+	network_path = _ecp_t.config.value <std::string>("trajectory_file", lib::MP_SECTION);
 }
 
-void sub_task_const_vel_gen_test::conditional_execution()
+void const_vel_gen_test::conditional_execution()
 {
 
 	std::vector <double> coordinates1(6); //postument
 	std::vector <double> coordinates2(7); //track
-	std::vector <double> coordinates3(7); //polycrank
 	std::vector <double> coordinates4(1); //conveyor
 
-	// JOINT ABSOLUTE
-	sr_ecp_msg.message("Joint absolute");
-	cvgenjoint->reset();
-	cvgenjoint->set_absolute();
+	//network_path = "../../src/application/generator_tester/optimizedTraj.trj";
+	//cvgenjoint->load_coordinates_from_file(network_path.c_str());
+	//cvgenjoint->Move();
 
-	if (track) {
-		coordinates2[0] = 0.0;
-		coordinates2[1] = -0.104;
-		coordinates2[2] = -1.542;
-		coordinates2[3] = 0.020;
-		coordinates2[4] = 1.404;
-		coordinates2[5] = 3.358;
-		coordinates2[6] = -2.538;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates2);
-	} else if (postument) {
-		coordinates1[0] = -0.104;
-		coordinates1[1] = -1.542;
-		coordinates1[2] = 0.020;
-		coordinates1[3] = 1.404;
-		coordinates1[4] = 3.358;
-		coordinates1[5] = -2.538;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates1);
-	} else if (poly) {
-		coordinates3[0] = 1.500;
-		coordinates3[1] = 1.500;
-		coordinates3[2] = 1.500;
-		coordinates3[3] = 1.500;
-		coordinates3[4] = 1.500;
-		coordinates3[5] = 1.500;
-		coordinates3[6] = 1.500;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates3);
-	} else if (conv) {
-		coordinates4[0] = 1.500;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates4);
-	}
+	//network_path = "../../src/application/generator_tester/trajectory.trj";
+	cvgenjoint->load_trajectory_from_file(network_path.c_str());
+	//network_path = std::string(ecp_t.mrrocpp_network_path);
 
-	if (track) {
-		coordinates2[0] = 0.0;
-		coordinates2[1] = -0.804;
-		coordinates2[2] = -1.342;
-		coordinates2[3] = 0.020;
-		coordinates2[4] = 1.034;
-		coordinates2[5] = 3.858;
-		coordinates2[6] = -2.738;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates2);
-	} else if (postument) {
-		coordinates1[0] = -0.804;
-		coordinates1[1] = -1.342;
-		coordinates1[2] = 0.020;
-		coordinates1[3] = 1.034;
-		coordinates1[4] = 3.858;
-		coordinates1[5] = -2.738;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates1);
-	} else if (poly) {
-		coordinates3[0] = 1.000;
-		coordinates3[1] = 1.000;
-		coordinates3[2] = 1.000;
-		coordinates3[3] = 1.000;
-		coordinates3[4] = 1.000;
-		coordinates3[5] = 1.000;
-		coordinates3[6] = 1.000;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates3);
-	} else if (conv) {
-		coordinates4[0] = 1.000;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates4);
-	}
-
-	if (track) {
-		coordinates2[0] = 0.0;
-		coordinates2[1] = -0.104;
-		coordinates2[2] = -1.542;
-		coordinates2[3] = 0.020;
-		coordinates2[4] = 1.134;
-		coordinates2[5] = 3.658;
-		coordinates2[6] = -2.738;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates2);
-	} else if (postument) {
-		coordinates1[0] = -0.104;
-		coordinates1[1] = -1.542;
-		coordinates1[2] = 0.020;
-		coordinates1[3] = 1.134;
-		coordinates1[4] = 3.658;
-		coordinates1[5] = -2.738;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates1);
-	} else if (poly) {
-		coordinates3[0] = 0.500;
-		coordinates3[1] = 0.500;
-		coordinates3[2] = 0.500;
-		coordinates3[3] = 0.500;
-		coordinates3[4] = 0.500;
-		coordinates3[5] = 0.500;
-		coordinates3[6] = 0.500;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates3);
-	} else if (conv) {
-		coordinates4[0] = 0.500;
-		cvgenjoint->load_absolute_joint_trajectory_pose(coordinates4);
-	}
-
-	if (cvgenjoint->calculate_interpolate()) {
+	if (cvgenjoint->calculate_interpolate()
+	//	 && cvgenjoint->detect_jerks(1) == 0
+	) {
 		cvgenjoint->Move();
 	}
-	// JOINT ABSOLUTE END
 
-	/* // JOINT RELATIVE
+	/*// JOINT ABSOLUTE
+	 sr_ecp_msg.message("Joint absolute");
+	 cvgenjoint->reset();
+	 cvgenjoint->set_absolute();
+
+	 if (track) {
+	 coordinates2[0] = 0.0;
+	 coordinates2[1] = -0.104;
+	 coordinates2[2] = -1.542;
+	 coordinates2[3] = 0.020;
+	 coordinates2[4] = 1.404;
+	 coordinates2[5] = 3.358;
+	 coordinates2[6] = -2.538;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates2);
+	 } else if (postument) {
+	 coordinates1[0] = -0.104;
+	 coordinates1[1] = -1.542;
+	 coordinates1[2] = 0.020;
+	 coordinates1[3] = 1.404;
+	 coordinates1[4] = 3.358;
+	 coordinates1[5] = -2.538;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates1);
+	 } else if (conv) {
+	 coordinates4[0] = 1.500;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates4);
+	 }
+
+	 if (track) {
+	 coordinates2[0] = 0.0;
+	 coordinates2[1] = -0.804;
+	 coordinates2[2] = -1.342;
+	 coordinates2[3] = 0.020;
+	 coordinates2[4] = 1.034;
+	 coordinates2[5] = 3.858;
+	 coordinates2[6] = -2.738;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates2);
+	 } else if (postument) {
+	 coordinates1[0] = -0.804;
+	 coordinates1[1] = -1.342;
+	 coordinates1[2] = 0.020;
+	 coordinates1[3] = 1.034;
+	 coordinates1[4] = 3.858;
+	 coordinates1[5] = -2.738;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates1);
+	 } else if (conv) {
+	 coordinates4[0] = 1.000;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates4);
+	 }
+
+	 if (track) {
+	 coordinates2[0] = 0.0;
+	 coordinates2[1] = -0.104;
+	 coordinates2[2] = -1.542;
+	 coordinates2[3] = 0.020;
+	 coordinates2[4] = 1.134;
+	 coordinates2[5] = 3.658;
+	 coordinates2[6] = -2.738;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates2);
+	 } else if (postument) {
+	 coordinates1[0] = -0.104;
+	 coordinates1[1] = -1.542;
+	 coordinates1[2] = 0.020;
+	 coordinates1[3] = 1.134;
+	 coordinates1[4] = 3.658;
+	 coordinates1[5] = -2.738;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates1);
+	 } else if (conv) {
+	 coordinates4[0] = 0.500;
+	 cvgenjoint->load_absolute_joint_trajectory_pose(coordinates4);
+	 }
+
+	 if (cvgenjoint->calculate_interpolate()) {
+	 cvgenjoint->Move();
+	 }
+	 // JOINT ABSOLUTE END
+
+
+	 /* // JOINT RELATIVE
 	 sr_ecp_msg.message("Joint relative");
 	 cvgenjoint->reset();
 	 cvgenjoint->set_relative();
@@ -642,18 +629,14 @@ void sub_task_const_vel_gen_test::conditional_execution()
 	 cvgenangle->Move();
 	 }
 	 // ANGLE AXIS RELATIVE END*/
-
 }
 
-sub_task_const_vel_gen_test::~sub_task_const_vel_gen_test()
+const_vel_gen_test::~const_vel_gen_test()
 {
-	delete cvgenjoint;
-	delete cvgenmotor;
-	delete cvgeneuler;
-	delete cvgenangle;
+
 }
 
-} // namespace task
+} // namespace generator
 } // namespace common
 } // namespace ecp
 } // namespace mrrocpp

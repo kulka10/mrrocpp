@@ -1,8 +1,8 @@
-#if !defined(_ECP_SUB_TASK_SPLINE_GEN_TEST_H)
-#define _ECP_SUB_TASK_SPLINE_GEN_TEST_H
+#if !defined(_ECP_SUBTASK_SPLINE_GEN_TEST_H)
+#define _ECP_SUBTASK_SPLINE_GEN_TEST_H
 
-#include "base/ecp/ecp_sub_task.h"
 #include "application/generator_tester/ecp_mp_st_spline_gen_test.h"
+#include "base/ecp/ecp_generator.h"
 
 namespace mrrocpp {
 namespace ecp {
@@ -10,33 +10,29 @@ namespace common {
 
 namespace generator {
 class spline;
-}
 
-namespace sub_task {
-
-class sub_task_spline_gen_test : public sub_task
+    class spline_gen_test : public common::generator::generator
 {
 
 private:
-        generator::spline* cvgenjoint;
-        generator::spline* cvgenmotor;
-        generator::spline* cvgeneuler;
-        generator::spline* cvgenangle;
+        boost::shared_ptr <spline> spgenjoint;
+        boost::shared_ptr <spline> spgenmotor;
+        boost::shared_ptr <spline> spgeneuler;
+        boost::shared_ptr <spline> spgenangle;
 
         bool track;
         bool postument;
-        bool poly;
         bool conv;
-
+        std::string network_path;
 
 public:
-        sub_task_spline_gen_test(task::task & _ecp_t);
-        ~sub_task_spline_gen_test();
+        spline_gen_test(task::task & _ecp_t);
+        ~spline_gen_test();
 
         void conditional_execution();
 };
 
-} // namespace task
+} // namespace generator
 } // namespace common
 } // namespace ecp
 } // namespace mrrocpp

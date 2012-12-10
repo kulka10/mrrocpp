@@ -14,19 +14,23 @@
 #include <string>
 #include <stdint.h>
 
+#include <boost/date_time/time_duration.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+
+#include "base/lib/impconst.h"
+
 namespace mrrocpp {
 }
 using namespace mrrocpp;
 namespace mrrocpp {
 namespace lib {
 
-// Rozmiary buforow
-const int MP_2_ECP_STRING_SIZE = 300;
-const int ECP_2_MP_STRING_SIZE = 300;
+// Rozmiary generycznych pol do wstawiania danych zaleznych od aplikacji.
+const int MP_2_ECP_SERIALIZED_DATA_SIZE = 500;
 
 // Stale do komunikacji
-const unsigned int CONNECT_RETRY = 1000;
-const unsigned int CONNECT_DELAY = 10000;
+const unsigned int CONNECT_RETRY = 500;
+const boost::posix_time::time_duration CONNECT_DELAY = boost::posix_time::milliseconds(20);
 
 // ----------------------- PRZYDATNE STALE ---------------------------
 const std::string MP_SECTION = "[mp]";
@@ -34,6 +38,7 @@ const std::string UI_SECTION = "[ui]";
 
 typedef std::string robot_name_t;
 typedef std::string TRANSMITTER_t;
+typedef std::string generator_name_t;
 
 const robot_name_t ROBOT_UNDEFINED = "ROBOT_UNDEFINED";
 
@@ -55,8 +60,9 @@ const double TORQUE_INERTIA = 0.5;
 const double FORCE_RECIPROCAL_DAMPING = 0.005;
 const double TORQUE_RECIPROCAL_DAMPING = 0.1;
 
+const double G_ACC = 9.81;
+
 const std::string ROBOT_TEST_MODE = "robot_test_mode";
-const std::string FORCE_SENSOR_TEST_MODE = "force_sensor_test_mode";
 
 // Stale czasowe
 

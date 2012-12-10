@@ -1,14 +1,3 @@
-// ------------------------------------------------------------------------
-// Proces:		EDP
-// Plik:			edp_irp6s.cc
-// System:	QNX/MRROC++  v. 6.3
-// Opis:		Metody wspolne dla robotow IRp-6
-// 				- definicja metod klasy edp_irp6s_effector
-//
-// Autor:		tkornuta
-// Data:		14.02.2007
-// -------------------------------------------------------------------------
-
 #include <cstdio>
 #include <cctype>
 #include <cstdlib>
@@ -22,11 +11,12 @@
 #include "base/lib/impconst.h"
 #include "base/lib/com_buf.h"
 #include "base/lib/mrmath/mrmath.h"
-#include "base/edp/servo_gr.h"
-#include "base/edp/reader.h"
-#include "base/edp/manip_trans_t.h"
-#include "base/edp/edp_e_manip.h"
-#include "base/edp/edp_force_sensor.h"
+#include "servo_gr.h"
+#include "reader.h"
+#include "manip_trans_t.h"
+#include "edp_e_manip.h"
+#include "edp_force_sensor.h"
+#include "edp_imu_sensor.h"
 #include "base/kinematics/kinematic_model_with_tool.h"
 
 namespace mrrocpp {
@@ -36,12 +26,22 @@ namespace common {
 bool manip_effector::compute_servo_joints_and_frame(void)
 {
 	static bool force_sensor_post_synchro_configuration = false;
+	static bool imu_sensor_post_synchro_configuration = false;
 
 	if (!(motor_driven_effector::compute_servo_joints_and_frame())) {
 		return false;
 	}
 
 	static int catch_nr = 0;
+
+	// poprzedni pomiar
+	static lib::Xyz_Angle_Axis_vector servo_prev_real_kartez_pos;
+
+	// poprzedni pomiar
+	static lib::Xyz_Angle_Axis_vector servo_prev_desired_kartez_pos;
+
+	// poprzedni pomiar
+	static lib::Xyz_Angle_Axis_vector servo_prev_real_kartez_vel;
 
 	// wyznaczenie nowych wartosci joints and frame dla obliczen w servo
 	try {
@@ -52,8 +52,12 @@ bool manip_effector::compute_servo_joints_and_frame(void)
 		get_current_kinematic_model()->i2e_transform(servo_current_joints, local_matrix);
 		// Pobranie wsp. zewnetrznych w ukladzie
 
-		lib::Xyz_Euler_Zyz_vector servo_real_kartez_pos; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
-		local_matrix.get_xyz_euler_zyz(servo_real_kartez_pos);
+		lib::Xyz_Angle_Axis_vector servo_desired_kartez_vel; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
+		lib::Xyz_Angle_Axis_vector servo_real_kartez_pos; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
+		lib::Xyz_Angle_Axis_vector servo_real_kartez_vel; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
+		lib::Xyz_Angle_Axis_vector servo_real_kartez_acc; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
+
+		local_matrix.get_xyz_angle_axis(servo_real_kartez_pos);
 
 		//obliczanie zadanej pozycji koncowki wedlug aktualnego rozkazu przetwarzanego w servo
 
@@ -63,7 +67,7 @@ bool manip_effector::compute_servo_joints_and_frame(void)
 			usleep(1000);
 		}
 
-		lib::MotorArray servo_desired_motor_pos(sb->command.parameters.move.abs_position, number_of_servos);
+		lib::MotorArray servo_desired_motor_pos(sb->command.parameters.move.servo_desired_motor_pos_new, number_of_servos);
 
 		lib::JointArray servo_desired_joints(number_of_servos);
 
@@ -71,26 +75,50 @@ bool manip_effector::compute_servo_joints_and_frame(void)
 		get_current_kinematic_model()->i2e_transform(servo_desired_joints, local_matrix);
 		// Pobranie wsp. zewnetrznych w ukladzie
 
-		lib::Xyz_Euler_Zyz_vector servo_desired_kartez_pos; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
-		local_matrix.get_xyz_euler_zyz(servo_desired_kartez_pos);
+		lib::Xyz_Angle_Axis_vector servo_desired_kartez_pos; // by Y polozenie we wspolrzednych xyz_euler_zyz obliczane co krok servo   XXXXX
+		local_matrix.get_xyz_angle_axis(servo_desired_kartez_pos);
+
+		servo_real_kartez_vel = (servo_real_kartez_pos - servo_prev_real_kartez_pos) / (lib::EDP_STEP);
+		servo_real_kartez_acc = (servo_real_kartez_vel - servo_prev_real_kartez_vel) / (lib::EDP_STEP);
+		servo_desired_kartez_vel = (servo_desired_kartez_pos - servo_prev_desired_kartez_pos) / (lib::EDP_STEP);
+		servo_prev_real_kartez_pos = servo_real_kartez_pos;
+		servo_prev_real_kartez_vel = servo_real_kartez_vel;
+		servo_prev_desired_kartez_pos = servo_desired_kartez_pos;
 
 		// scope-locked reader data update
 		{
 			boost::mutex::scoped_lock lock(rb_obj->reader_mutex);
 
 			servo_real_kartez_pos.to_table(rb_obj->step_data.real_cartesian_position);
+			servo_real_kartez_vel.to_table(rb_obj->step_data.real_cartesian_vel);
+			servo_real_kartez_acc.to_table(rb_obj->step_data.real_cartesian_acc);
 			servo_desired_kartez_pos.to_table(rb_obj->step_data.desired_cartesian_position);
+			servo_desired_kartez_vel.to_table(rb_obj->step_data.desired_cartesian_vel);
 		}
 
 		// Obliczenie polozenia robota we wsp. zewnetrznych bez narzedzia.
+		lib::Homog_matrix servo_current_frame_wo_tool;
 		((mrrocpp::kinematics::common::kinematic_model_with_tool*) get_current_kinematic_model())->i2e_wo_tool_transform(servo_current_joints, servo_current_frame_wo_tool);
-
+		servo_current_frame_wo_tool_dp.write(servo_current_frame_wo_tool);
+		// force_sensor configuration
 		if (vs != NULL) {
-			boost::mutex::scoped_lock lock(vs->mtx);
+
 			if ((is_synchronised()) && (!(force_sensor_post_synchro_configuration))) {
+				boost::mutex::scoped_lock lock(vs->mtx);
 				force_sensor_post_synchro_configuration = true;
 				vs->new_edp_command = true;
 				vs->command = FORCE_CONFIGURE;
+			}
+		}
+
+		// imu_sensor configuration
+		if (imu_sen != NULL) {
+
+			if ((is_synchronised()) && (!(imu_sensor_post_synchro_configuration))) {
+				boost::mutex::scoped_lock lock(imu_sen->mtx);
+				imu_sensor_post_synchro_configuration = true;
+				imu_sen->new_edp_command = true;
+				imu_sen->command = IMU_CONFIGURE;
 			}
 		}
 
@@ -124,6 +152,7 @@ void manip_effector::set_robot_model_with_sb(const lib::c_buffer &instruction)
 		default: // blad: nie istniejca specyfikacja modelu robota
 			// ustawi numer bledu
 			manip_effector::set_robot_model(instruction);
+			break;
 	}
 }
 /*--------------------------------------------------------------------------*/
@@ -155,32 +184,26 @@ void manip_effector::get_arm_position_with_force_and_sb(bool read_hardware, lib:
 		get_current_kinematic_model()->mp2i_transform(current_motor_pos, current_joints);
 		get_current_kinematic_model()->i2e_transform(current_joints, current_end_effector_frame);
 	}
-	switch (instruction.get_arm_type)
-	{
-		case lib::FRAME:
-			// przeliczenie wspolrzednych do poziomu, ktory ma byc odczytany
-			// Przepisanie definicji koncowki danej w postaci
-			// TRANS z wewntrznych struktur danych TRANSFORMATORa
-			// do wewntrznych struktur danych REPLY_BUFFER
 
-			reply.arm.pf_def.arm_frame = current_end_effector_frame;
+	// przeliczenie wspolrzednych do poziomu, ktory ma byc odczytany
+	// Przepisanie definicji koncowki danej w postaci
+	// TRANS z wewntrznych struktur danych TRANSFORMATORa
+	// do wewntrznych struktur danych REPLY_BUFFER
 
-			// dla robotow track i postument - oblicz chwytak
-			break;
-		default: // blad: nieznany sposob zapisu wspolrzednych koncowki
-			motor_driven_effector::get_arm_position_get_arm_type_switch(instruction);
-	}
+	reply.arm.pf_def.arm_frame = current_end_effector_frame;
+
+	motor_driven_effector::get_arm_position_get_arm_type_switch(instruction);
 
 	reply.servo_step = step_counter;
 
-	lib::Homog_matrix current_frame_wo_offset = return_current_frame(WITHOUT_TRANSLATION);
-	lib::Ft_tr ft_tr_inv_current_frame_matrix(!current_frame_wo_offset);
+	lib::Homog_matrix current_frame_wo_offset = servo_current_frame_wo_tool_dp.read();
+	current_frame_wo_offset.remove_translation();
+	lib::Xi_f ft_tr_inv_current_frame_matrix(!current_frame_wo_offset);
 
 	lib::Homog_matrix current_tool(((mrrocpp::kinematics::common::kinematic_model_with_tool*) get_current_kinematic_model())->tool);
-	lib::Ft_tr ft_tr_inv_tool_matrix(!current_tool);
+	lib::Xi_f ft_tr_inv_tool_matrix(!current_tool);
 
-	lib::Ft_vector current_force;
-	force_msr_download(current_force);
+	lib::Ft_vector current_force = force_dp.read();
 
 	// sprowadzenie sil z ukladu bazowego do ukladu kisci
 	// modyfikacja pobranych sil w ukladzie czujnika - do ukladu wyznaczonego przez force_tool_frame i reference_frame
@@ -193,20 +216,16 @@ void manip_effector::get_arm_position_with_force_and_sb(bool read_hardware, lib:
 void manip_effector::get_arm_position_get_arm_type_switch(lib::c_buffer &instruction)
 { // odczytanie pozycji ramienia
 
-	switch (instruction.get_arm_type)
-	{
-		case lib::FRAME:
-			// przeliczenie wspolrzednych do poziomu, ktory ma byc odczytany
-			get_current_kinematic_model()->mp2i_transform(current_motor_pos, current_joints);
-			get_current_kinematic_model()->i2e_transform(current_joints, current_end_effector_frame);
-			// TRANS z wewntrznych struktur danych TRANSFORMATORa
-			// do wewntrznych struktur danych REPLY_BUFFER
+	// przeliczenie wspolrzednych do poziomu, ktory ma byc odczytany
+	get_current_kinematic_model()->mp2i_transform(current_motor_pos, current_joints);
+	get_current_kinematic_model()->i2e_transform(current_joints, current_end_effector_frame);
+	// TRANS z wewntrznych struktur danych TRANSFORMATORa
+	// do wewntrznych struktur danych REPLY_BUFFER
 
-			reply.arm.pf_def.arm_frame = current_end_effector_frame;
-			break;
-		default: // blad: nieznany sposob zapisu wspolrzednych koncowki
-			motor_driven_effector::get_arm_position_get_arm_type_switch(instruction);
-	}
+	reply.arm.pf_def.arm_frame = current_end_effector_frame;
+
+	motor_driven_effector::get_arm_position_get_arm_type_switch(instruction);
+
 }
 
 /*--------------------------------------------------------------------------*/
@@ -318,7 +337,7 @@ void manip_effector::iterate_macrostep(const lib::JointArray & begining_joints, 
 	const uint16_t &ECP_value_in_step_no = instruction.value_in_step_no; // liczba krokow po ktorych bedzie wyslana odpowiedz do ECP o przewidywanym zakonczeniu ruchu
 	const lib::POSE_SPECIFICATION &set_arm_type = instruction.set_arm_type;
 
-	double force_xyz_torque_xyz[6]; // wartosci zadana sily
+	lib::Ft_v_vector desired_force_torque; // wartosci zadana sily
 	double inertia[6];
 	double reciprocal_damping[6];
 
@@ -336,22 +355,31 @@ void manip_effector::iterate_macrostep(const lib::JointArray & begining_joints, 
 			case lib::UNGUARDED_MOTION:
 				inertia[i] = 0.0;
 				reciprocal_damping[i] = 0.0; // the force influence is eliminated
-				force_xyz_torque_xyz[i] = instruction.arm.pf_def.force_xyz_torque_xyz[i];
+				desired_force_torque[i] = instruction.arm.pf_def.force_xyz_torque_xyz[i];
 				// inertia is not eleliminated
 				break;
 			case lib::GUARDED_MOTION:
 				inertia[i] = instruction.arm.pf_def.inertia[i];
 				reciprocal_damping[i] = instruction.arm.pf_def.reciprocal_damping[i];
-				force_xyz_torque_xyz[i] = 0.0; // the desired force is set to zero
+				desired_force_torque[i] = 0.0; // the desired force is set to zero
 				break;
 			case lib::CONTACT:
 				inertia[i] = instruction.arm.pf_def.inertia[i];
 				reciprocal_damping[i] = instruction.arm.pf_def.reciprocal_damping[i];
-				force_xyz_torque_xyz[i] = instruction.arm.pf_def.force_xyz_torque_xyz[i];
+				desired_force_torque[i] = instruction.arm.pf_def.force_xyz_torque_xyz[i];
 				break;
 			default:
 				break;
 		}
+	}
+
+	if (rb_obj) {
+		boost::mutex::scoped_lock lock(rb_obj->reader_mutex);
+
+		desired_force_torque.to_table(rb_obj->step_data.desired_force);
+
+	} else {
+		//	std::cerr << " " << std::endl;
 	}
 
 	const unsigned long PREVIOUS_MOVE_VECTOR_NULL_STEP_VALUE = 10;
@@ -366,26 +394,26 @@ void manip_effector::iterate_macrostep(const lib::JointArray & begining_joints, 
 
 	//	std::cout << current_tool << std::endl;
 
-	lib::Ft_tr ft_tr_inv_tool_matrix = !(lib::Ft_tr(current_tool));
-	lib::V_tr v_tr_tool_matrix(current_tool);
-	lib::V_tr v_tr_inv_tool_matrix = !v_tr_tool_matrix;
+	lib::Xi_f ft_tr_inv_tool_matrix = !(lib::Xi_f(current_tool));
+	lib::Xi_v v_tr_tool_matrix(current_tool);
+	lib::Xi_v v_tr_inv_tool_matrix = !v_tr_tool_matrix;
 
 	// poczatek generacji makrokrokubase_pos_xyz_rot_xyz_vector
 	for (int step = 1; step <= ECP_motion_steps; ++step) {
 
-		lib::Homog_matrix current_frame_wo_offset = return_current_frame(WITHOUT_TRANSLATION);
+		lib::Homog_matrix current_frame_wo_offset = servo_current_frame_wo_tool_dp.read();
+		current_frame_wo_offset.remove_translation();
+		lib::Xi_v v_tr_current_frame_matrix(current_frame_wo_offset);
 
-		lib::V_tr v_tr_current_frame_matrix(current_frame_wo_offset);
+		lib::Ft_vector current_force = force_dp.read();
 
-		lib::Ft_vector current_force;
-		force_msr_download(current_force);
 		// sprowadzenie sil z ukladu bazowego do ukladu kisci
 		// modyfikacja pobranych sil w ukladzie czujnika - do ukladu wyznaczonego przez force_tool_frame i reference_frame
 
 		lib::Homog_matrix begining_end_effector_frame_with_current_translation = begining_end_effector_frame;
 		begining_end_effector_frame_with_current_translation.set_translation_vector(desired_end_effector_frame);
 
-		lib::Ft_v_vector current_force_torque(ft_tr_inv_tool_matrix * !(lib::Ft_tr(current_frame_wo_offset))
+		lib::Ft_v_vector current_force_torque(ft_tr_inv_tool_matrix * !(lib::Xi_f(current_frame_wo_offset))
 				* current_force);
 		//		lib::Ft_v_vector tmp_force_torque (lib::Ft_v_tr((!current_tool) * (!current_frame_wo_offset), lib::Ft_v_tr::FT) * lib::Ft_v_vector (current_force));
 
@@ -405,7 +433,7 @@ void manip_effector::iterate_macrostep(const lib::JointArray & begining_joints, 
 			case lib::FRAME:
 			case lib::JOINT:
 			case lib::MOTOR:
-				pos_xyz_rot_xyz_vector = lib::V_tr(!(lib::V_tr(!begining_end_effector_frame_with_current_translation
+				pos_xyz_rot_xyz_vector = lib::Xi_v(!(lib::Xi_v(!begining_end_effector_frame_with_current_translation
 						* desired_end_effector_frame))) * base_pos_xyz_rot_xyz_vector;
 				break;
 			case lib::PF_VELOCITY:
@@ -429,7 +457,7 @@ void manip_effector::iterate_macrostep(const lib::JointArray & begining_joints, 
 			}
 
 			// PRAWO STEROWANIA
-			move_rot_vector[i] = ((reciprocal_damping[i] * (force_xyz_torque_xyz[i] - current_force_torque[i])
+			move_rot_vector[i] = ((reciprocal_damping[i] * (desired_force_torque[i] - current_force_torque[i])
 					+ pos_xyz_rot_xyz_vector[i]) * lib::EDP_STEP * lib::EDP_STEP
 					+ reciprocal_damping[i] * inertia[i] * previous_move_rot_vector[i])
 					/ (lib::EDP_STEP + reciprocal_damping[i] * inertia[i]);
@@ -582,6 +610,7 @@ void manip_effector::set_robot_model(const lib::c_buffer &instruction)
 			break;
 		default: // blad: nie istniejaca specyfikacja modelu robota
 			motor_driven_effector::set_robot_model(instruction);
+			break;
 	}
 }
 /*--------------------------------------------------------------------------*/
@@ -617,6 +646,7 @@ void manip_effector::get_robot_model(lib::c_buffer &instruction)
 			break;
 		default: // blad: nie istniejaca specyfikacja modelu robota
 			motor_driven_effector::get_robot_model(instruction);
+			break;
 	}
 }
 /*--------------------------------------------------------------------------*/
@@ -651,7 +681,7 @@ void manip_effector::compute_frame(const lib::c_buffer &instruction)
 			break;
 		default: {
 			BOOST_THROW_EXCEPTION(nfe_2() << mrrocpp_error0(INVALID_MOTION_TYPE));
-
+			break;
 		}
 	}
 	// Przeliczenie wspolrzednych zewnetrznych na wspolrzedne wewnetrzne
@@ -667,41 +697,14 @@ void manip_effector::compute_frame(const lib::c_buffer &instruction)
 }
 /*--------------------------------------------------------------------------*/
 
-/*--------------------------------------------------------------------------*/
-
-lib::Homog_matrix manip_effector::return_current_frame(TRANSLATION_ENUM translation_mode)
-{ // by Y
-	boost::mutex::scoped_lock lock(effector_mutex);
-	// przepisanie danych na zestaw lokalny dla edp_force
-	// lib::copy_frame(force_current_end_effector_frame, global_current_end_effector_frame);
-	lib::Homog_matrix return_frame(servo_current_frame_wo_tool);
-
-	if (translation_mode == WITHOUT_TRANSLATION)
-		return_frame.remove_translation();
-	return return_frame;
-}
-
-void manip_effector::force_msr_upload(const lib::Ft_vector & l_vector)
-{ // by Y wgranie globalnego zestawu danych
-	boost::mutex::scoped_lock lock(force_mutex);
-	global_force_msr = l_vector;
-}
-
-// by Y odczytanie globalnego zestawu danych
-void manip_effector::force_msr_download(lib::Ft_vector & l_vector)
-{
-	boost::mutex::scoped_lock lock(force_mutex);
-	l_vector = global_force_msr;
-}
-
-/*--------------------------------------------------------------------------*/
-
 // Synchronizacja robota.
 void manip_effector::synchronise()
 {
 	motor_driven_effector::synchronise();
 	get_current_kinematic_model()->i2e_transform(current_joints, current_end_effector_frame);
 }
+
+/*--------------------------------------------------------------------------*/
 
 //   sprawdza stan robota
 void manip_effector::get_controller_state(lib::c_buffer &instruction)
@@ -726,6 +729,7 @@ void manip_effector::single_thread_move_arm(const lib::c_buffer &instruction)
 			break;
 		default: // blad: niezdefiniowany sposb specyfikacji pozycji koncowki
 			motor_driven_effector::single_thread_move_arm(instruction);
+			break;
 	}
 
 }
@@ -750,6 +754,7 @@ void manip_effector::multi_thread_move_arm(const lib::c_buffer &instruction)
 					break;
 				default: // blad: niezdefiniowany sposb specyfikacji pozycji koncowki
 					motor_driven_effector::multi_thread_move_arm(instruction);
+					break;
 			}
 			break;
 		case lib::TCIM:

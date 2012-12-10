@@ -18,7 +18,6 @@
 #include "base/lib/configurator.h"
 #include "base/lib/sr/sr_ecp.h"
 #include "ecp_task.h"
-#include "ecp_sub_task.h"
 #include "ecp_robot.h"
 #include "ecp_exceptions.h"
 #include "ecp_generator.h"
@@ -30,7 +29,7 @@ namespace ecp {
 namespace common {
 namespace task {
 
-task_base::task_base(lib::configurator &_config, boost::shared_ptr<robot::ecp_robot_base> & robot_ref) :
+task_base::task_base(lib::configurator &_config, boost::shared_ptr <robot::ecp_robot_base> & robot_ref) :
 		ecp_mp::task::task(_config),
 		ecp_m_robot(robot_ref),
 		MP(lib::MP_SECTION),
@@ -38,9 +37,43 @@ task_base::task_base(lib::configurator &_config, boost::shared_ptr<robot::ecp_ro
 		command(*this, "MP_COMMAND"),
 		mp_command(command.access),
 		mp_2_ecp_next_state_string(mp_command.ecp_next_state.next_state),
-		continuous_coordination(false)
+		continuous_coordination(false),
+		mp_2_ecp_next_state_string_handler_active(true)
 {
 	initialize_communication();
+}
+
+void task_base::register_generator(generator::generator_base* _gen)
+{
+	const std::string & gen_name = _gen->generator_name;
+
+	if (gen_name != EMPTY_SUBTASK_GENERATOR_NAME) {
+		if (generator_m.find(gen_name) == generator_m.end()) {
+			generator_m[gen_name] = _gen;
+		} else {
+			std::stringstream ss(std::stringstream::in | std::stringstream::out);
+			ss << "Generator name already registered: " << gen_name;
+			sr_ecp_msg->message(lib::FATAL_ERROR, ss.str().c_str());
+		}
+	} else {
+		sr_ecp_msg->message(lib::FATAL_ERROR, "No name specified for generator");
+	}
+}
+
+void task_base::subtasks_and_generators_dispatcher()
+{
+
+	if (generator_m.find(mp_2_ecp_next_state_string) != generator_m.end()) {
+		//sr_ecp_msg->message(lib::NON_FATAL_ERROR, mp_2_ecp_next_state_string);
+		generator_m.at(mp_2_ecp_next_state_string)->conditional_execution();
+	} else {
+		if (!mp_2_ecp_next_state_string_handler_active) {
+			std::stringstream ss(std::stringstream::in | std::stringstream::out);
+			ss << "ecp dispatcher failure (label not recognized): " << mp_2_ecp_next_state_string;
+			sr_ecp_msg->message(lib::FATAL_ERROR, ss.str().c_str());
+		}
+	}
+
 }
 
 void task_base::main_task_algorithm(void)
@@ -50,11 +83,14 @@ void task_base::main_task_algorithm(void)
 
 		get_next_state();
 
-		sr_ecp_msg->message("Order received");
-
-		subtasks_conditional_execution();
+		// message with current generator being executed
+		std::stringstream ss(std::stringstream::in | std::stringstream::out);
+		ss << "Order received: " << mp_2_ecp_next_state_string;
+		sr_ecp_msg->message(ss.str().c_str());
 
 		mp_2_ecp_next_state_string_handler();
+
+		subtasks_and_generators_dispatcher();
 
 		termination_notice();
 	} //end for
@@ -62,6 +98,7 @@ void task_base::main_task_algorithm(void)
 
 void task_base::mp_2_ecp_next_state_string_handler(void)
 {
+	mp_2_ecp_next_state_string_handler_active = false;
 }
 
 void task_base::ecp_stop_accepted_handler(void)
@@ -132,16 +169,6 @@ void task_base::termination_notice(void)
 		set_ecp_reply(lib::TASK_TERMINATED);
 		reply.Send(ecp_reply);
 	}
-}
-
-void task_base::subtasks_conditional_execution()
-{
-	BOOST_FOREACH(const subtask_pair_t & subtask_node, subtask_m)
-			{
-				if (mp_2_ecp_next_state_string == subtask_node.first) {
-					subtask_node.second->conditional_execution();
-				}
-			}
 }
 
 // Petla odbierania wiadomosci.
